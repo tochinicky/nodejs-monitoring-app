@@ -44,5 +44,5 @@ jobs:
             npm install pm2 --save
 
             # Restart or start the app using npx
-            npx pm2 restart nodeapp || npx pm2 start app.js --name nodeapp
+            npx pm2 startOrRestart app.js --name nodeapp
           EOF
