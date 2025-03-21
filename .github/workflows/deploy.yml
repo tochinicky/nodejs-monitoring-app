@@ -21,10 +21,27 @@ jobs:
           sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
             set -e  # Stop execution if any command fails
 
+            # Remove conflicting Node.js and npm versions
+            sudo apt-get remove --purge -y nodejs npm
+            sudo apt-get autoremove -y
+            sudo apt-get autoclean -y
+            sudo apt-get update
+
+            # Install Node.js correctly
+            curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+
+            # Install npm separately
+            sudo apt-get install -y npm
+
+            # Verify installations
+              node -v
+              npm -v
             # Install required dependencies
             sudo apt update
             sudo apt install -y nginx certbot python3-certbot-nginx nodejs npm curl
             
+
             # Ensure PM2 is installed globally
             sudo npm install -g pm2
             export PATH=$PATH:$(npm bin -g)
