@@ -19,15 +19,15 @@ jobs:
       - name: Deploy via SSH using Password
         run: |
           sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
-            # Ensure Node.js is installed
-            if ! command -v node &> /dev/null; then
-              curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-              sudo apt-get install -y nodejs
-            fi
+            set -e  # Stop execution if any command fails
 
-            # Print Node.js and npm versions
-            node -v
-            npm -v
+            # Install required dependencies
+            sudo apt update
+            sudo apt install -y nginx certbot python3-certbot-nginx nodejs npm curl
+            
+            # Ensure PM2 is installed globally
+            sudo npm install -g pm2
+            export PATH=$PATH:$(npm bin -g)
 
             # Ensure the application directory exists
             if [ ! -d "/home/${{ secrets.VM_USER }}/nodejs-app" ]; then
@@ -40,51 +40,51 @@ jobs:
             # Pull latest changes
             git pull origin main
 
-            # Install dependencies, including PM2 locally
-            npm install pm2 --save
+            # Install Node.js dependencies
+            npm install
 
-            # Restart or start the app using npx
-            npx pm2 delete nodeapp || true
-            npx pm2 start app.js --name nodeapp
+            # Restart or start the app using PM2
+            pm2 delete nodeapp || true
+            pm2 start app.js --name nodeapp
             pm2 save
-            pm2 startup systemd
+            pm2 startup systemd --user
 
-            # Configure Nginx with HTTPS redirection
+            # Configure Nginx for reverse proxy with HTTPS
             sudo bash -c 'cat > /etc/nginx/sites-available/nodeapp << EOL
           server {
               listen 80;
-              server_name yourdomain.com;
+              server_name devopshng.online;
 
               # Redirect HTTP to HTTPS
               return 301 https://$host$request_uri;
           }
 
           server {
-              listen 443 ssl;
-              server_name yourdomain.com;
+            listen 443 ssl;
+            server_name yourdomain.com;
 
-              ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-              ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-              include /etc/letsencrypt/options-ssl-nginx.conf;
+            ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+            ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
+            include /etc/letsencrypt/options-ssl-nginx.conf;
 
-              location / {
-                  proxy_pass http://localhost:3001;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
+            location / {
+                proxy_pass http://localhost:3001;
+                proxy_http_version 1.1;
+                proxy_set_header Upgrade $http_upgrade;
+                proxy_set_header Connection "upgrade";
+                proxy_set_header Host $host;
+                proxy_cache_bypass $http_upgrade;
+            }
 
-              # Security Headers
-              add_header X-Frame-Options DENY;
-              add_header X-XSS-Protection "1; mode=block";
-              add_header X-Content-Type-Options nosniff;
-              add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+            # Security Headers
+            add_header X-Frame-Options DENY;
+            add_header X-XSS-Protection "1; mode=block";
+            add_header X-Content-Type-Options nosniff;
+            add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
           }
-          EOL'
+            EOL'
 
-          # Enable Nginx configuration and restart
+            # Enable the Nginx configuration
             sudo ln -sf /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/
             sudo systemctl restart nginx
 
