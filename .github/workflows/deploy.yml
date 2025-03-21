@@ -1,0 +1,26 @@
+name: Deploy Node.js App
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Deploy via SSH using Password
+        run: |
+          sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
+            cd /home/${{ secrets.VM_USER }}/nodejs-app
+            git pull origin main
+            npm install
+            pm2 restart nodeapp || pm2 start app.js --name nodeapp
+          EOF
