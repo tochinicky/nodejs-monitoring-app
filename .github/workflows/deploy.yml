@@ -19,11 +19,41 @@ jobs:
       - name: Deploy via SSH using Password
         run: |
           sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
+            # Ensure Node.js is installed
+            if ! command -v node &> /dev/null; then
+              curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+
+            # Ensure npm is installed
+            if ! command -v npm &> /dev/null; then
+              sudo apt-get install -y npm
+            fi
+
+            # Ensure PM2 is installed globally
+            if ! command -v pm2 &> /dev/null; then
+              npm install -g pm2
+            fi
+
+            # Print versions for debugging
+            node -v
+            npm -v
+            pm2 -v
+
+            # Ensure the application directory exists
             if [ ! -d "/home/${{ secrets.VM_USER }}/nodejs-app" ]; then
               git clone https://github.com/tochinicky/nodejs-monitoring-app.git /home/${{ secrets.VM_USER }}/nodejs-app
             fi
+
+            # Navigate to the app directory
             cd /home/${{ secrets.VM_USER }}/nodejs-app
+
+            # Pull latest changes
             git pull origin main
+
+            # Install dependencies
             npm install
+
+            # Restart or start the app with PM2
             pm2 restart nodeapp || pm2 start app.js --name nodeapp
           EOF
