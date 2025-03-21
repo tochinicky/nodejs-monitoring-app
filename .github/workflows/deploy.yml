@@ -19,6 +19,9 @@ jobs:
       - name: Deploy via SSH using Password
         run: |
           sshpass -p "${{ secrets.SSH_PASSWORD }}" ssh -o StrictHostKeyChecking=no ${{ secrets.VM_USER }}@${{ secrets.VM_IP }} << 'EOF'
+            if [ ! -d "/home/${{ secrets.VM_USER }}/nodejs-app" ]; then
+              git clone https://github.com/tochinicky/nodejs-monitoring-app.git /home/${{ secrets.VM_USER }}/nodejs-app
+            fi
             cd /home/${{ secrets.VM_USER }}/nodejs-app
             git pull origin main
             npm install
