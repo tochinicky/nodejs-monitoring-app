@@ -22,10 +22,13 @@ jobs:
             set -e  # Stop execution if any command fails
 
             # Remove conflicting Node.js and npm versions
-            sudo apt-get remove --purge -y nodejs npm
-            sudo apt-get autoremove -y
-            sudo apt-get autoclean -y
-            sudo apt-get update
+              sudo apt-get remove --purge -y nodejs npm
+              sudo apt-get autoremove -y
+              sudo apt-get autoclean -y
+              sudo apt-get update
+
+            # Fix broken dependencies
+             sudo apt-get install -f -y
 
             # Install Node.js correctly
             curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
