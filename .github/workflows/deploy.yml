@@ -25,20 +25,9 @@ jobs:
               sudo apt-get install -y nodejs
             fi
 
-            # Ensure npm is installed
-            if ! command -v npm &> /dev/null; then
-              sudo apt-get install -y npm
-            fi
-
-            # Ensure PM2 is installed globally
-            if ! command -v pm2 &> /dev/null; then
-              npm install -g pm2
-            fi
-
-            # Print versions for debugging
+            # Print Node.js and npm versions
             node -v
             npm -v
-            pm2 -v
 
             # Ensure the application directory exists
             if [ ! -d "/home/${{ secrets.VM_USER }}/nodejs-app" ]; then
@@ -51,9 +40,9 @@ jobs:
             # Pull latest changes
             git pull origin main
 
-            # Install dependencies
-            npm install
+            # Install dependencies, including PM2 locally
+            npm install pm2 --save
 
-            # Restart or start the app with PM2
-            pm2 restart nodeapp || pm2 start app.js --name nodeapp
+            # Restart or start the app using npx
+            npx pm2 restart nodeapp || npx pm2 start app.js --name nodeapp
           EOF
