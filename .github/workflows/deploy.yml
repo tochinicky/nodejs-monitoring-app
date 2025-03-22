@@ -25,5 +25,5 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          sshpass -p "$VM_PASSWORD" scp -o StrictHostKeyChecking=no -r ./* $VM_USERNAME@$VM_IP:/home/$VM_USERNAME/app
-          sshpass -p "$VM_PASSWORD" ssh $VM_USERNAME@$VM_IP "cd app && npm ci --production && pm2 restart ecosystem.config.js"
+          sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -r ./* $VM_USER@$VM_IP:/home/$VM_USER/app
+          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "cd app && npm install --production && pm2 restart ecosystem.config.js"
