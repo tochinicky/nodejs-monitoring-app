@@ -46,7 +46,7 @@ jobs:
           sudo apt-get install -y nginx certbot python3-certbot-nginx
 
           # 4. Install Node.js 18.x properly
-          curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
           sudo apt-get install -y nodejs
           sudo npm install -g npm@latest
 
