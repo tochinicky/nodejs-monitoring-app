@@ -35,14 +35,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nginx certbot python3-certbot-nginx
 
-          # Setup Certbot SSL configuration first
+          # Setup Certbot SSL configuration
           sudo mkdir -p /etc/letsencrypt
           sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
             -o /etc/letsencrypt/options-ssl-nginx.conf
           sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem \
             -o /etc/letsencrypt/ssl-dhparams.pem
 
-          # Configure basic Nginx first
+          # Configure initial Nginx
           sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_INIT
           server {
               listen 80;
@@ -50,9 +50,9 @@ jobs:
               location / {
                   proxy_pass http://localhost:3001;
                   proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Upgrade \\\$http_upgrade;
                   proxy_set_header Connection "upgrade";
-                  proxy_set_header Host \$host;
+                  proxy_set_header Host \\\$host;
               }
               
               location /.well-known/acme-challenge/ {
@@ -65,7 +65,7 @@ jobs:
           sudo ln -sf /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/
           sudo nginx -t && sudo systemctl reload nginx
 
-          # Obtain SSL certificate first
+          # Obtain SSL certificate
           sudo certbot --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --redirect
 
           # Install PM2
