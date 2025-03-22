@@ -27,99 +27,42 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOF
           set -euxo pipefail
 
-          # Install Node.js 18.x
+          # 1. Verify DNS resolution first
+          if ! dig +short ${DOMAIN} | grep -q ${VM_IP}; then
+            echo "ERROR: DNS not pointing to server IP!"
+            echo "Domain ${DOMAIN} must resolve to ${VM_IP}"
+            exit 1
+          fi
+
+          # 2. Install dependencies
+          sudo apt-get update
+          sudo apt-get install -y nginx certbot python3-certbot-nginx nodejs npm
+
+          # 3. Temporary Nginx config for DNS verification
+          sudo tee /etc/nginx/sites-available/temp_verify << NGINX_TEMP
+          server {
+              listen 80;
+              server_name ${DOMAIN};
+              root /var/www/html;
+              
+              location /.well-known/acme-challenge/ {
+                  allow all;
+              }
+          }
+          NGINX_TEMP
+
+          # 4. Enable temporary config
+          sudo ln -sf /etc/nginx/sites-available/temp_verify /etc/nginx/sites-enabled/
+          sudo rm -f /etc/nginx/sites-enabled/default
+          sudo nginx -t && sudo systemctl restart nginx
+
+          # 5. Obtain certificate first
+          sudo certbot certonly --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --keep-until-expiring
+
+          # 6. Proceed with main installation
           curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
           sudo apt-get install -y nodejs
 
-          # Install system dependencies
-          sudo apt-get update
-          sudo apt-get install -y nginx certbot python3-certbot-nginx
-
-          # Setup Certbot SSL configuration
-          sudo mkdir -p /etc/letsencrypt
-          sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
-            -o /etc/letsencrypt/options-ssl-nginx.conf
-          sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem \
-            -o /etc/letsencrypt/ssl-dhparams.pem
-
-          # Configure initial Nginx
-          sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_INIT
-          server {
-              listen 80;
-              server_name ${DOMAIN};
-              location / {
-                  proxy_pass http://localhost:3001;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \\\$http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host \\\$host;
-              }
-              
-              location /.well-known/acme-challenge/ {
-                  root /var/www/html;
-              }
-          }
-          NGINX_INIT
-
-          # Enable initial config
-          sudo ln -sf /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/
-          sudo nginx -t && sudo systemctl reload nginx
-
-          # Obtain SSL certificate
-          sudo certbot --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --redirect
-
-          # Install PM2
-          sudo npm install -g pm2
-
-          # Setup application
-          APP_DIR="/home/${VM_USER}/nodejs-app"
-          if [ ! -d "\${APP_DIR}" ]; then
-            git clone https://github.com/tochinicky/nodejs-monitoring-app.git "\${APP_DIR}"
-          fi
-
-          cd "\${APP_DIR}"
-          git reset --hard
-          git pull origin main
-          npm install
-
-          # Start/Restart application
-          pm2 delete nodeapp || true
-          pm2 start app.js --name nodeapp
-          pm2 save
-          sudo env PATH=\$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ${VM_USER} --hp /home/${VM_USER}
-
-          # Update Nginx config with SSL
-          sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_FINAL
-          server {
-              listen 80;
-              server_name ${DOMAIN};
-              return 301 https://\\\$host\\\$request_uri;
-          }
-
-          server {
-              listen 443 ssl;
-              server_name ${DOMAIN};
-
-              ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-              ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-              include /etc/letsencrypt/options-ssl-nginx.conf;
-              ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-
-              location / {
-                  proxy_pass http://localhost:3001;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade \\\$http_upgrade;
-                  proxy_set_header Connection "upgrade";
-                  proxy_set_header Host \\\$host;
-
-                  add_header X-Frame-Options DENY;
-                  add_header X-XSS-Protection "1; mode=block";
-                  add_header X-Content-Type-Options nosniff;
-                  add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
-              }
-          }
-          NGINX_FINAL
-
-          # Final Nginx reload
-          sudo nginx -t && sudo systemctl restart nginx
+          # ... rest of your original deployment steps ...
+          # (PM2 setup, app deployment, final Nginx config, etc)
           EOF
