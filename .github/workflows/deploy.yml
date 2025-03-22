@@ -34,11 +34,27 @@ jobs:
             exit 1
           fi
 
-          # 2. Install dependencies
-          sudo apt-get update
-          sudo apt-get install -y nginx certbot python3-certbot-nginx nodejs npm
+          # 2. Clean existing Node.js installations
+          sudo apt-get purge -y nodejs npm
+          sudo rm -rf /etc/apt/sources.list.d/nodesource.list*
+          sudo apt-get autoremove -y
+          sudo apt-get clean
+          sudo apt-get autoclean
 
-          # 3. Temporary Nginx config for DNS verification
+          # 3. Install system dependencies
+          sudo apt-get update
+          sudo apt-get install -y nginx certbot python3-certbot-nginx
+
+          # 4. Install Node.js 18.x properly
+          curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+          sudo apt-get install -y nodejs
+          sudo npm install -g npm@latest
+
+          # 5. Verify Node.js installation
+          node -v
+          npm -v
+
+          # 6. Temporary Nginx config for DNS verification
           sudo tee /etc/nginx/sites-available/temp_verify << NGINX_TEMP
           server {
               listen 80;
@@ -51,18 +67,13 @@ jobs:
           }
           NGINX_TEMP
 
-          # 4. Enable temporary config
+          # 7. Enable temporary config
           sudo ln -sf /etc/nginx/sites-available/temp_verify /etc/nginx/sites-enabled/
           sudo rm -f /etc/nginx/sites-enabled/default
           sudo nginx -t && sudo systemctl restart nginx
 
-          # 5. Obtain certificate first
+          # 8. Obtain certificate first
           sudo certbot certonly --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --keep-until-expiring
 
-          # 6. Proceed with main installation
-          curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-
-          # ... rest of your original deployment steps ...
-          # (PM2 setup, app deployment, final Nginx config, etc)
+          # ... rest of your deployment steps ...
           EOF
