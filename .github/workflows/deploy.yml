@@ -19,9 +19,6 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build (if needed)
-        run: npm run build # Remove if no build needed
-
       - name: Deploy to Azure VM
         env:
           VM_IP: ${{ secrets.VM_IP }}
