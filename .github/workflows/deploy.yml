@@ -16,7 +16,7 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get install -y sshpass
 
-      - name: Secure Deployment via SSH
+      - name: Deploy via SSH
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
@@ -24,121 +24,132 @@ jobs:
           DOMAIN: ${{ secrets.DOMAIN }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
         run: |
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << 'EOSSH'
+          # Verify local variables are set
+          echo "VM_IP length: ${#VM_IP}"
+          echo "DOMAIN: ${DOMAIN}"
+          
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOL
+          #!/bin/bash
           set -euxo pipefail
-
-          # 1. Validate network prerequisites
-          echo "🔍 Validating network configuration..."
-          sudo ufw allow 'Nginx Full'
-          sudo ufw reload
-          nc -zv ${VM_IP} 80 || { echo "❌ Port 80 blocked"; exit 1; }
-
-          # 2. Verify DNS propagation with retries
-          echo "🌐 Checking DNS propagation..."
-          for i in {1..10}; do
-            if dig +short ${DOMAIN} @8.8.8.8 | grep -q ${VM_IP}; then
-              echo "✅ DNS resolved correctly"
-              break
-            fi
-            [ $i -eq 10 ] && { echo "❌ DNS propagation failed"; exit 1; }
-            sleep 30
+      
+          # 1. Enable and configure firewall
+          if ! sudo ufw status | grep -qw active; then
+              echo "🛡️ Initializing firewall..."
+              sudo ufw allow OpenSSH
+              sudo ufw allow 80/tcp
+              sudo ufw allow 443/tcp
+              sudo ufw --force enable
+          fi
+      
+          # 2. Verify variable availability
+          declare -A required_vars=(
+              ["DOMAIN"]="$DOMAIN"
+              ["VM_IP"]="$VM_IP"
+          )
+      
+          for var in "\${!required_vars[@]}"; do
+              if [ -z "\${required_vars[\$var]}" ]; then
+                  echo "❌ Missing required variable: \$var"
+                  exit 1
+              fi
           done
-
-          # 3. Configure webroot for ACME challenges
-          echo "📂 Setting up ACME webroot..."
-          WEBROOT_PATH="/var/www/acme"
-          sudo mkdir -p ${WEBROOT_PATH}/.well-known/acme-challenge
-          sudo chown -R www-data:www-data ${WEBROOT_PATH}
-          sudo chmod -R 755 ${WEBROOT_PATH}
-
-          # 4. Create temporary verification Nginx config
-          echo "🔧 Creating temporary Nginx configuration..."
-          sudo tee /etc/nginx/sites-available/acme_verify << NGINXCFG
+      
+          # 3. DNS verification with retries
+          for attempt in {1..5}; do
+              if dig +short "$DOMAIN" | grep -qw "$VM_IP"; then
+                  echo "✅ DNS verified"
+                  break
+              fi
+              if [ \$attempt -eq 5 ]; then
+                  echo "❌ DNS verification failed after 5 attempts"
+                  echo "Domain $DOMAIN must resolve to $VM_IP"
+                  exit 1
+              fi
+              sleep \$((attempt * 10))
+          done
+      
+          # 4. Package installation
+          sudo apt-get update
+          sudo apt-get install -y nginx certbot python3-certbot-nginx nodejs npm
+      
+          # 5. Configure temporary Nginx
+          sudo tee /etc/nginx/sites-available/temp_verify << NGX
           server {
               listen 80;
-              server_name ${DOMAIN};
+              server_name $DOMAIN;
               
               location /.well-known/acme-challenge/ {
-                  root ${WEBROOT_PATH};
+                  root /var/www/html;
                   try_files \$uri =404;
               }
-
+              
               location / {
-                  return 403 "ACME verification in progress";
+                  return 403 "Certificate verification in progress";
               }
           }
-          NGINXCFG
-
-          # 5. Activate temporary configuration
-          sudo ln -sf /etc/nginx/sites-available/acme_verify /etc/nginx/sites-enabled/
-          sudo rm -rf /etc/nginx/sites-enabled/default
+          NGX
+      
+          # 6. Activate config
+          sudo rm -f /etc/nginx/sites-enabled/*
+          sudo ln -s /etc/nginx/sites-available/temp_verify /etc/nginx/sites-enabled/
           sudo nginx -t && sudo systemctl restart nginx
-
-          # 6. Obtain SSL certificate with webroot method
-          echo "🛡️  Obtaining SSL certificate..."
-          sudo certbot certonly --webroot -w ${WEBROOT_PATH} \
-              -d ${DOMAIN} \
-              --non-interactive \
-              --agree-tos \
-              -m ${CERTBOT_EMAIL} \
-              --force-renewal \
-              --preferred-chain "ISRG Root X1" \
+      
+          # 7. SSL Certificate setup
+          sudo certbot certonly --nginx \
+              -n --agree-tos \
+              -m "$CERTBOT_EMAIL" \
+              -d "$DOMAIN" \
               --key-type ecdsa \
-              --elliptic-curve secp384r1 \
-              --post-hook "systemctl reload nginx"
-
-          # 7. Install production Nginx configuration
-          echo "🚀 Deploying production configuration..."
-          sudo tee /etc/nginx/sites-available/production << PRODCFG
+              --cert-name "$DOMAIN" \
+              --keep-until-expiring \
+              --preferred-chain "ISRG Root X1"
+      
+          # 8. Final Nginx config
+          sudo tee /etc/nginx/sites-available/production << PROD
           server {
               listen 80;
-              server_name ${DOMAIN};
+              server_name $DOMAIN;
               return 301 https://\$host\$request_uri;
           }
-
+      
           server {
               listen 443 ssl http2;
-              server_name ${DOMAIN};
-
-              ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
-              ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
-              
+              server_name $DOMAIN;
+      
+              ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
+      
               # SSL configuration
               ssl_protocols TLSv1.3;
               ssl_prefer_server_ciphers off;
               ssl_ecdh_curve X25519:secp521r1:secp384r1;
-              ssl_session_timeout 1d;
-              ssl_session_cache shared:MozSSL:10m;
-
-              # ACME challenge fallback
-              location ^~ /.well-known/acme-challenge/ {
-                  root ${WEBROOT_PATH};
+      
+              # ACME challenges
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
               }
-
-              # Application proxy
+      
+              # Node.js proxy
               location / {
                   proxy_pass http://localhost:3000;
                   proxy_http_version 1.1;
                   proxy_set_header Upgrade \$http_upgrade;
                   proxy_set_header Connection 'upgrade';
                   proxy_set_header Host \$host;
-                  proxy_cache_bypass \$http_upgrade;
               }
           }
-          PRODCFG
-
-          # 8. Finalize Nginx setup
-          sudo ln -sf /etc/nginx/sites-available/production /etc/nginx/sites-enabled/
-          sudo rm -f /etc/nginx/sites-enabled/acme_verify
-          sudo nginx -t && sudo systemctl restart nginx
-
-          # 9. Verify certificate installation
-          echo "🔐 Validating certificate chain..."
-          openssl s_client -connect ${DOMAIN}:443 -servername ${DOMAIN} -showcerts </dev/null 2>/dev/null | openssl x509 -noout -text | grep -q "Let's Encrypt" || { echo "❌ Certificate validation failed"; exit 1; }
-
-          # 10. Setup automatic renewal
-          echo "⏰ Configuring certificate renewal..."
-          echo "0 3 * * * /usr/bin/certbot renew --quiet --deploy-hook 'systemctl reload nginx'" | sudo tee /etc/cron.d/certbot-renewal
-
-          echo "🎉 Deployment successful! HTTPS configured for ${DOMAIN}"
-          EOSSH
+          PROD
+      
+          # 9. Activate production config
+          sudo rm -f /etc/nginx/sites-enabled/temp_verify
+          sudo ln -s /etc/nginx/sites-available/production /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
+      
+          # 10. Verify installation
+          curl -sI https://$DOMAIN | grep -q "200 OK" || {
+              echo "❌ Final verification failed"
+              exit 1
+          }
+      
+          echo "🎉 Deployment successful!"
+        EOL
