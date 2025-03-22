@@ -29,7 +29,7 @@ jobs:
           VM_USER: ${{ secrets.VM_USER }}
         run: |
           # Install PM2 without sudo prompt
-          sshpass -p "$SSH_PASSWORD" ssh -tt $VM_USER@$VM_IP << EOF
+          sshpass -p "$SSH_PASSWORD" ssh -t $VM_USER@$VM_IP << EOF
           sudo npm install -g pm2 --unsafe-perm
           exit
           EOF
@@ -43,7 +43,7 @@ jobs:
             ./ $VM_USER@$VM_IP:/home/$VM_USER/app/
 
           # Execute deployment commands with proper environment
-          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "
+          sshpass -p "$SSH_PASSWORD" ssh -t $VM_USER@$VM_IP "
             source ~/.bashrc
             export PATH=\$PATH:/usr/local/bin
             cd /home/$VM_USER/app
