@@ -28,8 +28,8 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          # Test basic connection first
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP "echo 'SSH connection successful'"
+          export SSHPASS="$SSH_PASSWORD"
+          sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP "echo 'SSH connection successful'"
 
           if [ $? -ne 0 ]; then
             echo "SSH connection failed. Please check credentials and VM availability."
@@ -42,20 +42,16 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          # Create a password file for rsync (more secure than command line)
-          echo "$SSH_PASSWORD" > ~/.ssh_pass
-          chmod 600 ~/.ssh_pass
+          # Use environment variable directly for sshpass
+          export SSHPASS="$SSH_PASSWORD"
 
-          # Transfer files using rsync
-          RSYNC_PASSWORD_FILE=~/.ssh_pass rsync -azP --delete \
+          # Transfer files using rsync with direct password from environment
+          rsync -azP --delete \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.github' \
-            -e "sshpass -f ~/.ssh_pass ssh -o StrictHostKeyChecking=no" \
+            -e "sshpass -e ssh -o StrictHostKeyChecking=no" \
             ./ $VM_USER@$VM_IP:/home/$VM_USER/app/
-
-          # Remove password file
-          rm ~/.ssh_pass
 
       - name: Deploy and Start Application
         env:
@@ -63,9 +59,11 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
+          # Set password in environment variable
+          export SSHPASS="$SSH_PASSWORD"
+
           # Execute all deployment commands in a single SSH session
-          # This ensures consistent environment and better error handling
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP << 'EOF'
+          sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP << 'EOF'
             # Print some debug information
             echo "Deploying application..."
             echo "Current directory: $(pwd)"
@@ -109,4 +107,4 @@ jobs:
             pm2 save
             
             echo "Deployment completed successfully!"
-            EOF
+          EOF
