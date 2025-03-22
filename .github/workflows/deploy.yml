@@ -19,20 +19,14 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
       - name: Deploy to Azure VM
         env:
           VM_IP: ${{ secrets.VM_IP }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
-        run: |   
-          sshpass -p "$SSH_PASSWORD" rsync -avz --delete \
-          --exclude-from=.deployfilter \
-          -e "ssh -o StrictHostKeyChecking=no -o Compression=yes" \
-          ./ $VM_USER@$VM_IP:/home/$VM_USER/app/
-
-          sshpass -p "$VM_PASSWORD" ssh $VM_USERNAME@$VM_IP "
-          cd app && \
-          npm ci --production --prefer-offline --no-audit && \
-          pm2 restart ecosystem.config.js --update-env && \
-          echo 'Deployment completed successfully'
-          "
+        run: |
+          sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -r ./* $VM_USER@$VM_IP:/home/$VM_USER/app
+          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "cd /home/$VM_USER/app && npm install --production && pm2 restart ecosystem.config.js"
