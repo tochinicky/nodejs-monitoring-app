@@ -27,7 +27,7 @@ jobs:
           sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOF
           set -euxo pipefail
 
-          # Install Node.js 18.x with bundled npm
+          # Install Node.js 18.x
           curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
           sudo apt-get install -y nodejs
 
@@ -35,10 +35,43 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y nginx certbot python3-certbot-nginx
 
-          # Install PM2 globally
+          # Setup Certbot SSL configuration first
+          sudo mkdir -p /etc/letsencrypt
+          sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot-nginx/certbot_nginx/_internal/tls_configs/options-ssl-nginx.conf \
+            -o /etc/letsencrypt/options-ssl-nginx.conf
+          sudo curl -s https://raw.githubusercontent.com/certbot/certbot/master/certbot/ssl-dhparams.pem \
+            -o /etc/letsencrypt/ssl-dhparams.pem
+
+          # Configure basic Nginx first
+          sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_INIT
+          server {
+              listen 80;
+              server_name ${DOMAIN};
+              location / {
+                  proxy_pass http://localhost:3001;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection "upgrade";
+                  proxy_set_header Host \$host;
+              }
+              
+              location /.well-known/acme-challenge/ {
+                  root /var/www/html;
+              }
+          }
+          NGINX_INIT
+
+          # Enable initial config
+          sudo ln -sf /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/
+          sudo nginx -t && sudo systemctl reload nginx
+
+          # Obtain SSL certificate first
+          sudo certbot --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --redirect
+
+          # Install PM2
           sudo npm install -g pm2
 
-          # Setup application directory
+          # Setup application
           APP_DIR="/home/${VM_USER}/nodejs-app"
           if [ ! -d "\${APP_DIR}" ]; then
             git clone https://github.com/tochinicky/nodejs-monitoring-app.git "\${APP_DIR}"
@@ -49,14 +82,14 @@ jobs:
           git pull origin main
           npm install
 
-          # Manage application process
+          # Start/Restart application
           pm2 delete nodeapp || true
           pm2 start app.js --name nodeapp
           pm2 save
           sudo env PATH=\$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ${VM_USER} --hp /home/${VM_USER}
 
-          # Configure Nginx
-          sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_CFG
+          # Update Nginx config with SSL
+          sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_FINAL
           server {
               listen 80;
               server_name ${DOMAIN};
@@ -70,6 +103,7 @@ jobs:
               ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
               ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
               include /etc/letsencrypt/options-ssl-nginx.conf;
+              ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
               location / {
                   proxy_pass http://localhost:3001;
@@ -84,15 +118,8 @@ jobs:
                   add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
               }
           }
-          NGINX_CFG
+          NGINX_FINAL
 
-          # Enable site configuration
-          sudo ln -sf /etc/nginx/sites-available/nodeapp /etc/nginx/sites-enabled/
+          # Final Nginx reload
           sudo nginx -t && sudo systemctl restart nginx
-
-          # Obtain SSL certificate
-          sudo certbot --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN}
-
-          # Final restart to ensure SSL is loaded
-          sudo systemctl restart nginx
           EOF
