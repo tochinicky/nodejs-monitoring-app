@@ -24,7 +24,7 @@ jobs:
           DOMAIN: ${{ secrets.DOMAIN }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
         run: |
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << 'EOF'
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOF
           set -euxo pipefail
 
           # Install Node.js 18.x with bundled npm
@@ -40,11 +40,11 @@ jobs:
 
           # Setup application directory
           APP_DIR="/home/${VM_USER}/nodejs-app"
-          if [ ! -d "${APP_DIR}" ]; then
-            git clone https://github.com/tochinicky/nodejs-monitoring-app.git "${APP_DIR}"
+          if [ ! -d "\${APP_DIR}" ]; then
+            git clone https://github.com/tochinicky/nodejs-monitoring-app.git "\${APP_DIR}"
           fi
 
-          cd "${APP_DIR}"
+          cd "\${APP_DIR}"
           git reset --hard
           git pull origin main
           npm install
@@ -53,14 +53,14 @@ jobs:
           pm2 delete nodeapp || true
           pm2 start app.js --name nodeapp
           pm2 save
-          sudo env PATH=$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ${VM_USER} --hp /home/${VM_USER}
+          sudo env PATH=\$PATH:/usr/bin /usr/lib/node_modules/pm2/bin/pm2 startup systemd -u ${VM_USER} --hp /home/${VM_USER}
 
           # Configure Nginx
           sudo tee /etc/nginx/sites-available/nodeapp > /dev/null << NGINX_CFG
           server {
               listen 80;
               server_name ${DOMAIN};
-              return 301 https://\$host\$request_uri;
+              return 301 https://\\\$host\\\$request_uri;
           }
 
           server {
@@ -74,9 +74,9 @@ jobs:
               location / {
                   proxy_pass http://localhost:3001;
                   proxy_http_version 1.1;
-                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Upgrade \\\$http_upgrade;
                   proxy_set_header Connection "upgrade";
-                  proxy_set_header Host \$host;
+                  proxy_set_header Host \\\$host;
 
                   add_header X-Frame-Options DENY;
                   add_header X-XSS-Protection "1; mode=block";
