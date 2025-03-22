@@ -16,7 +16,7 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get install -y sshpass
 
-      - name: Deploy via SSH
+      - name: Secure Deployment via SSH
         env:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
@@ -24,49 +24,121 @@ jobs:
           DOMAIN: ${{ secrets.DOMAIN }}
           CERTBOT_EMAIL: ${{ secrets.CERTBOT_EMAIL }}
         run: |
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOF
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << 'EOSSH'
           set -euxo pipefail
 
-          # 1. Verify DNS resolution first
-          if ! dig +short ${DOMAIN} | grep -q ${VM_IP}; then
-            echo "ERROR: DNS not pointing to server IP!"
-            echo "Domain ${DOMAIN} must resolve to ${VM_IP}"
-            exit 1
-          fi
+          # 1. Validate network prerequisites
+          echo "🔍 Validating network configuration..."
+          sudo ufw allow 'Nginx Full'
+          sudo ufw reload
+          nc -zv ${VM_IP} 80 || { echo "❌ Port 80 blocked"; exit 1; }
 
-          # 3. Install system dependencies
-          sudo apt-get update
-          sudo apt-get install -y nginx certbot python3-certbot-nginx
+          # 2. Verify DNS propagation with retries
+          echo "🌐 Checking DNS propagation..."
+          for i in {1..10}; do
+            if dig +short ${DOMAIN} @8.8.8.8 | grep -q ${VM_IP}; then
+              echo "✅ DNS resolved correctly"
+              break
+            fi
+            [ $i -eq 10 ] && { echo "❌ DNS propagation failed"; exit 1; }
+            sleep 30
+          done
 
-          # 4. Install Node.js 18.x properly
-          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-          sudo apt-get install -y nodejs
-          sudo npm install -g npm@latest
+          # 3. Configure webroot for ACME challenges
+          echo "📂 Setting up ACME webroot..."
+          WEBROOT_PATH="/var/www/acme"
+          sudo mkdir -p ${WEBROOT_PATH}/.well-known/acme-challenge
+          sudo chown -R www-data:www-data ${WEBROOT_PATH}
+          sudo chmod -R 755 ${WEBROOT_PATH}
 
-          # 5. Verify Node.js installation
-          node -v
-          npm -v
-
-          # 6. Temporary Nginx config for DNS verification
-          sudo tee /etc/nginx/sites-available/temp_verify << NGINX_TEMP
+          # 4. Create temporary verification Nginx config
+          echo "🔧 Creating temporary Nginx configuration..."
+          sudo tee /etc/nginx/sites-available/acme_verify << NGINXCFG
           server {
               listen 80;
               server_name ${DOMAIN};
-              root /var/www/html;
               
               location /.well-known/acme-challenge/ {
-                  allow all;
+                  root ${WEBROOT_PATH};
+                  try_files \$uri =404;
+              }
+
+              location / {
+                  return 403 "ACME verification in progress";
               }
           }
-          NGINX_TEMP
+          NGINXCFG
 
-          # 7. Enable temporary config
-          sudo ln -sf /etc/nginx/sites-available/temp_verify /etc/nginx/sites-enabled/
-          sudo rm -f /etc/nginx/sites-enabled/default
+          # 5. Activate temporary configuration
+          sudo ln -sf /etc/nginx/sites-available/acme_verify /etc/nginx/sites-enabled/
+          sudo rm -rf /etc/nginx/sites-enabled/default
           sudo nginx -t && sudo systemctl restart nginx
 
-          # 8. Obtain certificate first
-          sudo certbot certonly --nginx -n --agree-tos -m ${CERTBOT_EMAIL} -d ${DOMAIN} --keep-until-expiring
+          # 6. Obtain SSL certificate with webroot method
+          echo "🛡️  Obtaining SSL certificate..."
+          sudo certbot certonly --webroot -w ${WEBROOT_PATH} \
+              -d ${DOMAIN} \
+              --non-interactive \
+              --agree-tos \
+              -m ${CERTBOT_EMAIL} \
+              --force-renewal \
+              --preferred-chain "ISRG Root X1" \
+              --key-type ecdsa \
+              --elliptic-curve secp384r1 \
+              --post-hook "systemctl reload nginx"
 
-          # ... rest of your deployment steps ...
-          EOF
+          # 7. Install production Nginx configuration
+          echo "🚀 Deploying production configuration..."
+          sudo tee /etc/nginx/sites-available/production << PRODCFG
+          server {
+              listen 80;
+              server_name ${DOMAIN};
+              return 301 https://\$host\$request_uri;
+          }
+
+          server {
+              listen 443 ssl http2;
+              server_name ${DOMAIN};
+
+              ssl_certificate /etc/letsencrypt/live/${DOMAIN}/fullchain.pem;
+              ssl_certificate_key /etc/letsencrypt/live/${DOMAIN}/privkey.pem;
+              
+              # SSL configuration
+              ssl_protocols TLSv1.3;
+              ssl_prefer_server_ciphers off;
+              ssl_ecdh_curve X25519:secp521r1:secp384r1;
+              ssl_session_timeout 1d;
+              ssl_session_cache shared:MozSSL:10m;
+
+              # ACME challenge fallback
+              location ^~ /.well-known/acme-challenge/ {
+                  root ${WEBROOT_PATH};
+              }
+
+              # Application proxy
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade \$http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host \$host;
+                  proxy_cache_bypass \$http_upgrade;
+              }
+          }
+          PRODCFG
+
+          # 8. Finalize Nginx setup
+          sudo ln -sf /etc/nginx/sites-available/production /etc/nginx/sites-enabled/
+          sudo rm -f /etc/nginx/sites-enabled/acme_verify
+          sudo nginx -t && sudo systemctl restart nginx
+
+          # 9. Verify certificate installation
+          echo "🔐 Validating certificate chain..."
+          openssl s_client -connect ${DOMAIN}:443 -servername ${DOMAIN} -showcerts </dev/null 2>/dev/null | openssl x509 -noout -text | grep -q "Let's Encrypt" || { echo "❌ Certificate validation failed"; exit 1; }
+
+          # 10. Setup automatic renewal
+          echo "⏰ Configuring certificate renewal..."
+          echo "0 3 * * * /usr/bin/certbot renew --quiet --deploy-hook 'systemctl reload nginx'" | sudo tee /etc/cron.d/certbot-renewal
+
+          echo "🎉 Deployment successful! HTTPS configured for ${DOMAIN}"
+          EOSSH
