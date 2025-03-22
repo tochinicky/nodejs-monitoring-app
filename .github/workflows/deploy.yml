@@ -22,31 +22,91 @@ jobs:
       - name: Install sshpass
         run: sudo apt-get update && sudo apt-get install -y sshpass
 
-      - name: Deploy to Azure VM
+      - name: Check SSH Connection
         env:
           VM_IP: ${{ secrets.VM_IP }}
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          # Install PM2 without sudo prompt
-          sshpass -p "$SSH_PASSWORD" ssh -t $VM_USER@$VM_IP << EOF
-          sudo npm install -g pm2 --unsafe-perm
-          exit
-          EOF
+          # Test basic connection first
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP "echo 'SSH connection successful'"
 
-          # Transfer files using rsync for better reliability
-          sshpass -p "$SSH_PASSWORD" rsync -azP --delete \
+          if [ $? -ne 0 ]; then
+            echo "SSH connection failed. Please check credentials and VM availability."
+            exit 1
+          fi
+
+      - name: Transfer Files to Azure VM
+        env:
+          VM_IP: ${{ secrets.VM_IP }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          # Create a password file for rsync (more secure than command line)
+          echo "$SSH_PASSWORD" > ~/.ssh_pass
+          chmod 600 ~/.ssh_pass
+
+          # Transfer files using rsync
+          RSYNC_PASSWORD_FILE=~/.ssh_pass rsync -azP --delete \
             --exclude='node_modules' \
             --exclude='.git' \
             --exclude='.github' \
-            -e "ssh -o StrictHostKeyChecking=no" \
+            -e "sshpass -f ~/.ssh_pass ssh -o StrictHostKeyChecking=no" \
             ./ $VM_USER@$VM_IP:/home/$VM_USER/app/
 
-          # Execute deployment commands with proper environment
-          sshpass -p "$SSH_PASSWORD" ssh -t $VM_USER@$VM_IP "
-            source ~/.bashrc
-            export PATH=\$PATH:/usr/local/bin
-            cd /home/$VM_USER/app
+          # Remove password file
+          rm ~/.ssh_pass
+
+      - name: Deploy and Start Application
+        env:
+          VM_IP: ${{ secrets.VM_IP }}
+          SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          # Execute all deployment commands in a single SSH session
+          # This ensures consistent environment and better error handling
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP << 'EOF'
+            # Print some debug information
+            echo "Deploying application..."
+            echo "Current directory: $(pwd)"
+            echo "Node version: $(node -v || echo 'Node not found')"
+            echo "NPM version: $(npm -v || echo 'NPM not found')"
+            
+            # Navigate to app directory
+            cd /home/$USER/app
+            
+            # Install production dependencies
+            echo "Installing dependencies..."
             npm ci --omit=dev --prefer-offline --no-audit
-            pm2 restart ecosystem.config.js --update-env
-          "
+            
+            # Install PM2 globally if not already installed
+            if ! command -v pm2 &> /dev/null; then
+              echo "Installing PM2 globally..."
+              sudo npm install -g pm2 --unsafe-perm
+            fi
+            
+            # Start or restart the application
+            echo "Starting application..."
+            if [ -f ecosystem.config.js ]; then
+              echo "Using ecosystem.config.js"
+              pm2 restart ecosystem.config.js --update-env || pm2 start ecosystem.config.js
+            else
+              echo "No ecosystem file found, looking for alternative start options..."
+              if grep -q '"start"' package.json; then
+                echo "Using npm start script"
+                pm2 restart app || pm2 start npm --name "app" -- start
+              else
+                echo "Trying to start main file"
+                pm2 restart app.js || pm2 start app.js
+              fi
+            fi
+            
+            # List running processes for verification
+            echo "Running processes:"
+            pm2 list
+            
+            # Save PM2 process list
+            pm2 save
+            
+            echo "Deployment completed successfully!"
+            EOF
