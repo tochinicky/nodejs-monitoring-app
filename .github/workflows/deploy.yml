@@ -27,11 +27,11 @@ jobs:
           # Verify local variables are set
           echo "VM_IP length: ${#VM_IP}"
           echo "DOMAIN: ${DOMAIN}"
-          
-          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << EOL
+
+          sshpass -p "$SSH_PASSWORD" ssh -o StrictHostKeyChecking=accept-new "${VM_USER}@${VM_IP}" << 'EOL'
           #!/bin/bash
           set -euxo pipefail
-      
+
           # 1. Enable and configure firewall
           if ! sudo ufw status | grep -qw active; then
               echo "🛡️ Initializing firewall..."
@@ -40,20 +40,20 @@ jobs:
               sudo ufw allow 443/tcp
               sudo ufw --force enable
           fi
-      
+
           # 2. Verify variable availability
           declare -A required_vars=(
               ["DOMAIN"]="$DOMAIN"
               ["VM_IP"]="$VM_IP"
           )
-      
+
           for var in "\${!required_vars[@]}"; do
               if [ -z "\${required_vars[\$var]}" ]; then
                   echo "❌ Missing required variable: \$var"
                   exit 1
               fi
           done
-      
+
           # 3. DNS verification with retries
           for attempt in {1..5}; do
               if dig +short "$DOMAIN" | grep -qw "$VM_IP"; then
@@ -67,11 +67,11 @@ jobs:
               fi
               sleep \$((attempt * 10))
           done
-      
+
           # 4. Package installation
           sudo apt-get update
           sudo apt-get install -y nginx certbot python3-certbot-nginx nodejs npm
-      
+
           # 5. Configure temporary Nginx
           sudo tee /etc/nginx/sites-available/temp_verify << NGX
           server {
@@ -88,12 +88,12 @@ jobs:
               }
           }
           NGX
-      
+
           # 6. Activate config
           sudo rm -f /etc/nginx/sites-enabled/*
           sudo ln -s /etc/nginx/sites-available/temp_verify /etc/nginx/sites-enabled/
           sudo nginx -t && sudo systemctl restart nginx
-      
+
           # 7. SSL Certificate setup
           sudo certbot certonly --nginx \
               -n --agree-tos \
@@ -103,7 +103,7 @@ jobs:
               --cert-name "$DOMAIN" \
               --keep-until-expiring \
               --preferred-chain "ISRG Root X1"
-      
+
           # 8. Final Nginx config
           sudo tee /etc/nginx/sites-available/production << PROD
           server {
@@ -111,24 +111,24 @@ jobs:
               server_name $DOMAIN;
               return 301 https://\$host\$request_uri;
           }
-      
+
           server {
               listen 443 ssl http2;
               server_name $DOMAIN;
-      
+
               ssl_certificate /etc/letsencrypt/live/$DOMAIN/fullchain.pem;
               ssl_certificate_key /etc/letsencrypt/live/$DOMAIN/privkey.pem;
-      
+
               # SSL configuration
               ssl_protocols TLSv1.3;
               ssl_prefer_server_ciphers off;
               ssl_ecdh_curve X25519:secp521r1:secp384r1;
-      
+
               # ACME challenges
               location /.well-known/acme-challenge/ {
                   root /var/www/html;
               }
-      
+
               # Node.js proxy
               location / {
                   proxy_pass http://localhost:3000;
@@ -139,17 +139,17 @@ jobs:
               }
           }
           PROD
-      
+
           # 9. Activate production config
           sudo rm -f /etc/nginx/sites-enabled/temp_verify
           sudo ln -s /etc/nginx/sites-available/production /etc/nginx/sites-enabled/
           sudo nginx -t && sudo systemctl reload nginx
-      
+
           # 10. Verify installation
           curl -sI https://$DOMAIN | grep -q "200 OK" || {
               echo "❌ Final verification failed"
               exit 1
           }
-      
+
           echo "🎉 Deployment successful!"
-        EOL
+          EOL
