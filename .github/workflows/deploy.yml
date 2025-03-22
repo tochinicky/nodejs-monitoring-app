@@ -28,7 +28,25 @@ jobs:
           SSH_PASSWORD: ${{ secrets.SSH_PASSWORD }}
           VM_USER: ${{ secrets.VM_USER }}
         run: |
-          # Install PM2 globally on the VM first (one-time setup)
-          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "sudo npm install -g pm2"
-          sshpass -p "$SSH_PASSWORD" scp -o StrictHostKeyChecking=no -r ./* $VM_USER@$VM_IP:/home/$VM_USER/app
-          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "cd /home/$VM_USER/app && npm install --production && pm2 restart ecosystem.config.js"
+          # Install PM2 without sudo prompt
+          sshpass -p "$SSH_PASSWORD" ssh -tt $VM_USER@$VM_IP << EOF
+          sudo npm install -g pm2 --unsafe-perm
+          exit
+          EOF
+
+          # Transfer files using rsync for better reliability
+          sshpass -p "$SSH_PASSWORD" rsync -azP --delete \
+            --exclude='node_modules' \
+            --exclude='.git' \
+            --exclude='.github' \
+            -e "ssh -o StrictHostKeyChecking=no" \
+            ./ $VM_USER@$VM_IP:/home/$VM_USER/app/
+
+          # Execute deployment commands with proper environment
+          sshpass -p "$SSH_PASSWORD" ssh $VM_USER@$VM_IP "
+            source ~/.bashrc
+            export PATH=\$PATH:/usr/local/bin
+            cd /home/$VM_USER/app
+            npm ci --omit=dev --prefer-offline --no-audit
+            pm2 restart ecosystem.config.js --update-env
+          "
