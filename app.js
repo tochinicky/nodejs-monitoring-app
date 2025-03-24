@@ -68,7 +68,7 @@ let deploymentStats = {
 // Enable JSON body parsing
 app.use(bodyParser.json());
 
-// Simulate some initial metrics
+// Simulate some initial metrics here
 deploymentCounter.inc({ type: "deployment", result: "success" });
 leadTimeGauge.set({ deployment_id: "initial" }, 3600); // 1 hour
 recoveryTimeGauge.set({ incident_id: "initial" }, 900); // 15 minutes
