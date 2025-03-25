@@ -92,6 +92,10 @@ jobs:
           # Set password in environment variable
           export SSHPASS="$SSH_PASSWORD"
 
+          # Install Node.js and npm
+            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+            sudo apt-get install -y nodejs
+
           # Execute all deployment commands in a single SSH session
           sshpass -e ssh -o StrictHostKeyChecking=no $VM_USER@$VM_IP << 'EOF'
             # Print some debug information
