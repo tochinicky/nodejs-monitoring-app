@@ -1,6 +1,8 @@
 const express = require('express');
 const prometheus = require('prom-client');
 const bodyParser = require('body-parser');
+const path = require('path');
+
 const app = express();
 const port = 3001;
 
@@ -117,13 +119,10 @@ app.get('/', (req, res) => {
           <li>Total Deployments: ${deploymentStats.total}</li>
           <li>Failed Deployments: ${deploymentStats.failed}</li>
           <li>Success Rate: ${
-  deploymentStats.total > 0
-    ? (
-      (deploymentStats.succeeded / deploymentStats.total) *
-                  100
-    ).toFixed(2)
-    : 0
-}%</li>
+            deploymentStats.total > 0
+              ? ((deploymentStats.succeeded / deploymentStats.total) * 100).toFixed(2)
+              : 0
+          }%</li>
         </ul>
       </body>
     </html>
@@ -136,8 +135,7 @@ app.get('/metrics', async (req, res) => {
 });
 
 app.get('/deploy', (req, res) => {
-  const result =
-    req.query.result || (Math.random() > 0.2 ? 'success' : 'failure');
+  const result = req.query.result || (Math.random() > 0.2 ? 'success' : 'failure');
   const deploymentId = `dep-${Date.now()}`;
   const leadTime = Math.floor(Math.random() * 86400); // Random time up to 24 hours
 
@@ -163,9 +161,7 @@ app.get('/deploy', (req, res) => {
         <h1>Deployment Simulated</h1>
         <p>Result: ${result}</p>
         <p>Deployment ID: ${deploymentId}</p>
-        <p>Lead Time: ${leadTime} seconds (${(leadTime / 3600).toFixed(
-  2
-)} hours)</p>
+        <p>Lead Time: ${leadTime} seconds (${(leadTime / 3600).toFixed(2)} hours)</p>
         <p><a href="/">Back to Home</a></p>
       </body>
     </html>
@@ -184,15 +180,18 @@ app.get('/recover', (req, res) => {
       <body>
         <h1>Recovery Simulated</h1>
         <p>Incident ID: ${incidentId}</p>
-        <p>Recovery Time: ${recoveryTime} seconds (${(
-  recoveryTime / 60
-).toFixed(2)} minutes)</p>
+        <p>Recovery Time: ${recoveryTime} seconds (${(recoveryTime / 60).toFixed(2)} minutes)</p>
         <p><a href="/">Back to Home</a></p>
       </body>
     </html>
   `);
 });
 
-app.listen(port, () => {
-  console.log(`App listening at http://localhost:${port}`);
-});
+// Only start the server if this file is run directly
+if (require.main === module) {
+  app.listen(port, () => {
+    console.log(`App listening at http://localhost:${port}`);
+  });
+}
+
+module.exports = app;
