@@ -101,6 +101,14 @@ jobs:
             # Print some debug information
             echo "Deploying application..."
             echo "Current directory: $(pwd)"
+
+          # Install Node.js and npm inside the VM
+            if ! command -v node &> /dev/null; then
+              echo "Node.js not found, installing..."
+              curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+              sudo apt-get install -y nodejs
+            fi
+            
             echo "Node version: $(node -v || echo 'Node not found')"
             echo "NPM version: $(npm -v || echo 'NPM not found')"
             
