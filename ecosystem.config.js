@@ -1,10 +1,10 @@
 module.exports = {
   apps: [
     {
-      name: "monitor-app",
-      script: "app.js",
+      name: 'monitor-app',
+      script: 'app.js',
       env: {
-        NODE_ENV: "production",
+        NODE_ENV: 'production',
         PORT: 3001,
       },
     },
