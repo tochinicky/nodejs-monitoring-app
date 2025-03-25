@@ -181,16 +181,16 @@ app.get("/recover", (req, res) => {
   res.send(`
     <html>
       <head><title>Recovery Simulated</title></head>
-          <body>
-            <h1>Recovery Simulated</h1>
-            <p>Incident ID: ${incidentId}</p>
-            <p>Recovery Time: ${recoveryTime} seconds (${(
+      <body>
+        <h1>Recovery Simulated</h1>
+        <p>Incident ID: ${incidentId}</p>
+        <p>Recovery Time: ${recoveryTime} seconds (${(
     recoveryTime / 60
   ).toFixed(2)} minutes)</p>
-            <p><a href="/">Back to Home</a></p>
-          </body>
-        </html>
-      `);
+        <p><a href="/">Back to Home</a></p>
+      </body>
+    </html>
+  `);
 });
 
 app.listen(port, () => {
