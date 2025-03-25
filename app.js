@@ -1,6 +1,6 @@
-const express = require("express");
-const prometheus = require("prom-client");
-const bodyParser = require("body-parser");
+const express = require('express');
+const prometheus = require('prom-client');
+const bodyParser = require('body-parser');
 const app = express();
 const port = 3001;
 
@@ -10,44 +10,44 @@ prometheus.collectDefaultMetrics({ register });
 
 // Create DORA metrics
 const deploymentCounter = new prometheus.Counter({
-  name: "dora_deployments_total",
-  help: "Count of deployments",
-  labelNames: ["type", "result"],
+  name: 'dora_deployments_total',
+  help: 'Count of deployments',
+  labelNames: ['type', 'result'],
 });
 
 const leadTimeGauge = new prometheus.Gauge({
-  name: "dora_lead_time_seconds",
-  help: "Time from commit to deployment in seconds",
-  labelNames: ["deployment_id"],
+  name: 'dora_lead_time_seconds',
+  help: 'Time from commit to deployment in seconds',
+  labelNames: ['deployment_id'],
 });
 
 const recoveryTimeGauge = new prometheus.Gauge({
-  name: "dora_recovery_time_seconds",
-  help: "Time to recover from a failure in seconds",
-  labelNames: ["incident_id"],
+  name: 'dora_recovery_time_seconds',
+  help: 'Time to recover from a failure in seconds',
+  labelNames: ['incident_id'],
 });
 
 const deploymentFrequencyGauge = new prometheus.Gauge({
-  name: "dora_deployment_frequency",
-  help: "Number of deployments per day",
+  name: 'dora_deployment_frequency',
+  help: 'Number of deployments per day',
 });
 
 const changeFailureRateGauge = new prometheus.Gauge({
-  name: "dora_change_failure_rate",
-  help: "Percentage of deployments that failed",
+  name: 'dora_change_failure_rate',
+  help: 'Percentage of deployments that failed',
 });
 
 // CI/CD Metrics
 const buildDurationGauge = new prometheus.Gauge({
-  name: "cicd_build_duration_seconds",
-  help: "Duration of CI/CD builds",
-  labelNames: ["workflow", "repository", "branch"],
+  name: 'cicd_build_duration_seconds',
+  help: 'Duration of CI/CD builds',
+  labelNames: ['workflow', 'repository', 'branch'],
 });
 
 const buildCounter = new prometheus.Counter({
-  name: "cicd_builds_total",
-  help: "Count of CI builds",
-  labelNames: ["workflow", "repository", "branch", "result"],
+  name: 'cicd_builds_total',
+  help: 'Count of CI builds',
+  labelNames: ['workflow', 'repository', 'branch', 'result'],
 });
 
 register.registerMetric(deploymentCounter);
@@ -69,20 +69,20 @@ let deploymentStats = {
 app.use(bodyParser.json());
 
 // Simulate some initial metrics here
-deploymentCounter.inc({ type: "deployment", result: "success" });
-leadTimeGauge.set({ deployment_id: "initial" }, 3600); // 1 hour
-recoveryTimeGauge.set({ incident_id: "initial" }, 900); // 15 minutes
+deploymentCounter.inc({ type: 'deployment', result: 'success' });
+leadTimeGauge.set({ deployment_id: 'initial' }, 3600); // 1 hour
+recoveryTimeGauge.set({ incident_id: 'initial' }, 900); // 15 minutes
 deploymentFrequencyGauge.set(5); // 5 per day
 changeFailureRateGauge.set(10); // 10%
 buildDurationGauge.set(
-  { workflow: "default", repository: "nodejs-monitoring-app", branch: "main" },
+  { workflow: 'default', repository: 'nodejs-monitoring-app', branch: 'main' },
   120
 );
 buildCounter.inc({
-  workflow: "default",
-  repository: "nodejs-monitoring-app",
-  branch: "main",
-  result: "success",
+  workflow: 'default',
+  repository: 'nodejs-monitoring-app',
+  branch: 'main',
+  result: 'success',
 });
 deploymentStats.total++;
 deploymentStats.succeeded++;
@@ -96,7 +96,7 @@ function updateChangeFailureRate() {
 }
 
 // Endpoints
-app.get("/", (req, res) => {
+app.get('/', (req, res) => {
   res.send(`
     <html>
       <head><title>Test App for DORA Metrics</title></head>
@@ -117,36 +117,36 @@ app.get("/", (req, res) => {
           <li>Total Deployments: ${deploymentStats.total}</li>
           <li>Failed Deployments: ${deploymentStats.failed}</li>
           <li>Success Rate: ${
-            deploymentStats.total > 0
-              ? (
-                  (deploymentStats.succeeded / deploymentStats.total) *
+  deploymentStats.total > 0
+    ? (
+      (deploymentStats.succeeded / deploymentStats.total) *
                   100
-                ).toFixed(2)
-              : 0
-          }%</li>
+    ).toFixed(2)
+    : 0
+}%</li>
         </ul>
       </body>
     </html>
   `);
 });
 
-app.get("/metrics", async (req, res) => {
-  res.setHeader("Content-Type", register.contentType);
+app.get('/metrics', async (req, res) => {
+  res.setHeader('Content-Type', register.contentType);
   res.send(await register.metrics());
 });
 
-app.get("/deploy", (req, res) => {
+app.get('/deploy', (req, res) => {
   const result =
-    req.query.result || (Math.random() > 0.2 ? "success" : "failure");
+    req.query.result || (Math.random() > 0.2 ? 'success' : 'failure');
   const deploymentId = `dep-${Date.now()}`;
   const leadTime = Math.floor(Math.random() * 86400); // Random time up to 24 hours
 
-  deploymentCounter.inc({ type: "deployment", result: result });
+  deploymentCounter.inc({ type: 'deployment', result: result });
   leadTimeGauge.set({ deployment_id: deploymentId }, leadTime);
 
   // Update deployment stats
   deploymentStats.total++;
-  if (result === "success") {
+  if (result === 'success') {
     deploymentStats.succeeded++;
   } else {
     deploymentStats.failed++;
@@ -164,15 +164,15 @@ app.get("/deploy", (req, res) => {
         <p>Result: ${result}</p>
         <p>Deployment ID: ${deploymentId}</p>
         <p>Lead Time: ${leadTime} seconds (${(leadTime / 3600).toFixed(
-    2
-  )} hours)</p>
+  2
+)} hours)</p>
         <p><a href="/">Back to Home</a></p>
       </body>
     </html>
   `);
 });
 
-app.get("/recover", (req, res) => {
+app.get('/recover', (req, res) => {
   const incidentId = `inc-${Date.now()}`;
   const recoveryTime = Math.floor(Math.random() * 3600); // Random time up to 1 hour
 
@@ -185,8 +185,8 @@ app.get("/recover", (req, res) => {
         <h1>Recovery Simulated</h1>
         <p>Incident ID: ${incidentId}</p>
         <p>Recovery Time: ${recoveryTime} seconds (${(
-    recoveryTime / 60
-  ).toFixed(2)} minutes)</p>
+  recoveryTime / 60
+).toFixed(2)} minutes)</p>
         <p><a href="/">Back to Home</a></p>
       </body>
     </html>
