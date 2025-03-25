@@ -1,7 +1,6 @@
 const express = require('express');
 const prometheus = require('prom-client');
 const bodyParser = require('body-parser');
-const path = require('path');
 
 const app = express();
 const port = 3001;
@@ -99,34 +98,15 @@ function updateChangeFailureRate() {
 
 // Endpoints
 app.get('/', (req, res) => {
-  res.send(`
-    <html>
-      <head><title>Test App for DORA Metrics</title></head>
-      <body>
-        <h1>Test App for DORA Metrics</h1>
-        <p>This application simulates a service that records DORA metrics for monitoring.</p>
-        
-        <h2>Simulate Actions:</h2>
-        <ul>
-          <li><a href="/deploy?result=success">Simulate Successful Deployment</a></li>
-          <li><a href="/deploy?result=failure">Simulate Failed Deployment</a></li>
-          <li><a href="/recover">Simulate Recovery from Incident</a></li>
-          <li><a href="/metrics">View Prometheus Metrics</a></li>
-        </ul>
-        
-        <h2>Current Stats:</h2>
-        <ul>
-          <li>Total Deployments: ${deploymentStats.total}</li>
-          <li>Failed Deployments: ${deploymentStats.failed}</li>
-          <li>Success Rate: ${
-            deploymentStats.total > 0
-              ? ((deploymentStats.succeeded / deploymentStats.total) * 100).toFixed(2)
-              : 0
-          }%</li>
-        </ul>
-      </body>
-    </html>
-  `);
+  res.send(
+    `<html><head><title>Test App for DORA Metrics</title></head><body><h1>Test App for DORA Metrics</h1><p>This application simulates a service that records DORA metrics for monitoring.</p><h2>Simulate Actions:</h2><ul><li><a href="/deploy?result=success">Simulate Successful Deployment</a></li><li><a href="/deploy?result=failure">Simulate Failed Deployment</a></li><li><a href="/recover">Simulate Recovery from Incident</a></li><li><a href="/metrics">View Prometheus Metrics</a></li></ul><h2>Current Stats:</h2><ul><li>Total Deployments: ${
+      deploymentStats.total
+    }</li><li>Failed Deployments: ${deploymentStats.failed}</li><li>Success Rate: ${
+      deploymentStats.total > 0
+        ? ((deploymentStats.succeeded / deploymentStats.total) * 100).toFixed(2)
+        : 0
+    }%</li></ul></body></html>`
+  );
 });
 
 app.get('/metrics', async (req, res) => {
@@ -154,18 +134,11 @@ app.get('/deploy', (req, res) => {
   // Update deployment frequency
   deploymentFrequencyGauge.set(deploymentStats.total / 30); // Assume over 30 days
 
-  res.send(`
-    <html>
-      <head><title>Deployment Simulated</title></head>
-      <body>
-        <h1>Deployment Simulated</h1>
-        <p>Result: ${result}</p>
-        <p>Deployment ID: ${deploymentId}</p>
-        <p>Lead Time: ${leadTime} seconds (${(leadTime / 3600).toFixed(2)} hours)</p>
-        <p><a href="/">Back to Home</a></p>
-      </body>
-    </html>
-  `);
+  res.send(
+    `<html><head><title>Deployment Simulated</title></head><body><h1>Deployment Simulated</h1><p>Result: ${result}</p><p>Deployment ID: ${deploymentId}</p><p>Lead Time: ${leadTime} seconds (${(
+      leadTime / 3600
+    ).toFixed(2)} hours)</p><p><a href="/">Back to Home</a></p></body></html>`
+  );
 });
 
 app.get('/recover', (req, res) => {
@@ -174,17 +147,11 @@ app.get('/recover', (req, res) => {
 
   recoveryTimeGauge.set({ incident_id: incidentId }, recoveryTime);
 
-  res.send(`
-    <html>
-      <head><title>Recovery Simulated</title></head>
-      <body>
-        <h1>Recovery Simulated</h1>
-        <p>Incident ID: ${incidentId}</p>
-        <p>Recovery Time: ${recoveryTime} seconds (${(recoveryTime / 60).toFixed(2)} minutes)</p>
-        <p><a href="/">Back to Home</a></p>
-      </body>
-    </html>
-  `);
+  res.send(
+    `<html><head><title>Recovery Simulated</title></head><body><h1>Recovery Simulated</h1><p>Incident ID: ${incidentId}</p><p>Recovery Time: ${recoveryTime} seconds (${(
+      recoveryTime / 60
+    ).toFixed(2)} minutes)</p><p><a href="/">Back to Home</a></p></body></html>`
+  );
 });
 
 // Only start the server if this file is run directly
