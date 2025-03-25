@@ -22,7 +22,7 @@ jobs:
         run: npm ci
 
       - name: Run linting
-        run: npm run lint
+        run: npx eslint . --ext .js
 
       - name: Run tests
         run: npm test
