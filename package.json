@@ -16,7 +16,7 @@
     "prometheus",
     "devops"
   ],
-  "author": "Your Name <your.email@example.com>",
+  "author": "Tochukwu Onyeamah",
   "license": "MIT",
   "dependencies": {
     "express": "^4.18.2",
